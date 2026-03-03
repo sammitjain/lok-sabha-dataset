@@ -8,6 +8,7 @@ Usage:
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from pathlib import Path
@@ -26,6 +27,35 @@ from lok_sabha_dataset.loader import (
 
 app = typer.Typer(add_completion=False)
 logger = logging.getLogger(__name__)
+
+
+# ── Issue tracking ────────────────────────────────────────────────────────────
+
+def _classify_issue(row: dict, parsed: dict | None) -> str | None:
+    """Return a short issue label, or None if the record is fine."""
+    if parsed is None:
+        return "parsed_file_missing"
+    full_text = parsed.get("full_markdown") or parsed.get("full_text")
+    if not full_text:
+        return "empty_text"
+    return None
+
+
+def _write_build_report(
+    issues: list[dict],
+    output_dir: Path,
+    total: int,
+) -> Path:
+    """Write a JSON build report listing all problematic records."""
+    report = {
+        "total_records": total,
+        "total_issues": len(issues),
+        "issues": issues,
+    }
+    path = output_dir / "build_report.json"
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(report, f, indent=2, ensure_ascii=False)
+    return path
 
 
 def _parse_session_range(raw: str) -> list[int]:
@@ -108,12 +138,12 @@ def build(
     logger.info("Source: %s", source_dir)
 
     records: list[dict] = []
-    missing_parsed = 0
+    issues: list[dict] = []
     total_index = 0
 
     for sess in session_list:
         index_rows = load_index_session(source_dir, lok, sess)
-        sess_missing = 0
+        sess_issues = 0
 
         for row in index_rows:
             total_index += 1
@@ -121,18 +151,26 @@ def build(
             parsed = None
             if pdf_fname:
                 parsed = load_parsed_json(source_dir, lok, sess, pdf_fname)
-            if parsed is None:
-                sess_missing += 1
+
+            issue = _classify_issue(row, parsed)
+            if issue:
+                sess_issues += 1
+                issues.append({
+                    "id": f"LS{lok}-S{sess}-{row.get('type', '')}-{row.get('ques_no')}",
+                    "session": sess,
+                    "pdf_filename": pdf_fname,
+                    "issue": issue,
+                    "engine": parsed.get("engine") if parsed else None,
+                })
 
             records.append(_build_record(row, parsed))
 
-        missing_parsed += sess_missing
         logger.info(
-            "  Session %d: %d questions, %d missing parsed text",
-            sess, len(index_rows), sess_missing,
+            "  Session %d: %d questions, %d issues",
+            sess, len(index_rows), sess_issues,
         )
 
-    logger.info("Total: %d records, %d missing parsed text", total_index, missing_parsed)
+    logger.info("Total: %d records, %d with issues", total_index, len(issues))
 
     if not records:
         logger.error("No records found. Check --source-dir and --lok/--sessions.")
@@ -146,6 +184,13 @@ def build(
 
     logger.info("Dataset written to %s (%d rows)", parquet_path, len(ds))
     logger.info("Columns: %s", ds.column_names)
+
+    # Write build report
+    if issues:
+        report_path = _write_build_report(issues, output_dir, total_index)
+        logger.warning("Build report: %d issues written to %s", len(issues), report_path)
+        for entry in issues:
+            logger.warning("  %s — %s (engine=%s)", entry["id"], entry["issue"], entry["engine"])
 
 
 if __name__ == "__main__":
