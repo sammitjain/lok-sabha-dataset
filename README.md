@@ -1,6 +1,14 @@
-# Lok Sabha Q&A Dataset
+<p align="center">
+  <img src="docs/assets/OpenSansad_Logo.png" alt="OpenSansad Logo" width="200">
+</p>
 
-Build and publish a HuggingFace dataset of Indian Lok Sabha parliamentary question-and-answer records. Data sourced from [Digital Sansad](https://sansad.in/).
+<h1 align="center">OpenSansad — Lok Sabha Q&A Dataset</h1>
+
+<p align="center">
+  A structured dataset of Indian Lok Sabha parliamentary question-and-answer records for NLP research and transparency.
+</p>
+
+Part of the **OpenSansad** initiative — a personal project to make Sansad's (Indian Parliament's) workings more accessible and transparent through open data and open-source tooling. Data sourced from [Digital Sansad](https://sansad.in/).
 
 ## Setup
 
