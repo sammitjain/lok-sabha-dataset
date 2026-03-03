@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+build/
+dist/
+
+# Virtual environments
+.venv/
+
+# Environment & secrets
+.env
+
+# IDE / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# Claude Code
+.claude/
+
+# Build output
+output/
+
+# Test caches
+.pytest_cache/
+
+# uv lock (generated)
