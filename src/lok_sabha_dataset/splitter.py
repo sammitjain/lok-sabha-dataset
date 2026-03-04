@@ -37,6 +37,14 @@ _QUESTION_START_RE = re.compile(
 # Footer: trailing asterisks
 _FOOTER_RE = re.compile(r"\n[*]{3,}\s*$")
 
+# Fallback question boundary for reversed documents where OCR garbles the
+# question number (e.g. `t*326.` instead of `*326.`). We look for the canonical
+# "pleased to state" phrase that appears in every parliamentary question.
+_PLEASED_TO_STATE_RE = re.compile(
+    r"pleased\s+to\s+state",
+    re.IGNORECASE,
+)
+
 
 # ── Answer boundary patterns ─────────────────────────────────────────────────
 
@@ -72,23 +80,27 @@ _TABLE_ANSWER_RE = re.compile(
 )
 
 # Strategy 6: Mid-line ANSWER (after punctuation like `;` or `?` or `)`)
-# This catches cases where ANSWER runs inline with the last sub-question
+# This catches cases where ANSWER runs inline with the last sub-question.
+# Also matches spaced `A N S W E R` and `ANSWER` followed by newline then MINISTER.
 _INLINE_ANSWER_RE = re.compile(
-    r"[;?.)]\s*(ANSWER\s+(?:THE\s+)?MINISTER\b.*)",
-    re.MULTILINE,
+    r"[;?.)\s]\s*((?:A\s+N\s+S\s+W\s+E\s+R|ANSWER)\s+(?:THE\s+)?MINISTER\b.*)",
+    re.MULTILINE | re.DOTALL | re.IGNORECASE,
 )
 
 # Strategy 7: `## MINISTER OF` or `## THE MINISTER OF` (no ANSWER marker at all)
+# Also handles OCR artifacts: `MINISTEROF` (missing space), mixed case `oF`
 _MINISTER_BOUNDARY_RE = re.compile(
-    r"^(## (?:THE\s+)?MINISTER\s+(?:OF|FOR)\b.*)",
-    re.MULTILINE,
+    r"^(## (?:THE\s+)?MINISTER\s*(?:OF|FOR)\b.*)",
+    re.MULTILINE | re.IGNORECASE,
 )
 
-# Strategy 8: `MINISTER OF STATE` without `##` prefix
-# Matches both "MINISTER OF STATE IN THE MINISTRY OF" and "MINISTER OF STATE FOR MINISTRY OF"
+# Strategy 8: `MINISTER OF ...` without `##` prefix (case-insensitive)
+# Catches patterns like "MINISTER OF STEEL (SHRI ...)", "Minister of State in the Ministry of ...",
+# "THE MINISTER OF LABOUR AND EMPLOYMENT (DR. ...)", etc.
+# Also handles OCR artifact `MINISTEROF` (missing space)
 _MINISTER_BOUNDARY_BARE_RE = re.compile(
-    r"^((?:THE\s+)?MINISTER\s+OF\s+STATE\s+(?:IN\s+THE|FOR)\s+MINISTRY\s+OF\b.*)",
-    re.MULTILINE,
+    r"^((?:THE\s+)?MINISTER\s*OF\s+\w.*)",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 # Strategy 9: MINISTER or ANSWER inside a markdown table row: `| THE MINISTER` or `| MINISTER`
@@ -202,10 +214,17 @@ def split_question_answer(full_markdown: str) -> tuple[str | None, str | None, s
             # look for the question start inside the answer portion.
             if not question_text and answer_text:
                 q_in_answer = _QUESTION_START_RE.search(raw_answer)
+                # Fallback: look for "pleased to state" if question number not found
+                # (OCR can garble question numbers like `t*326.` or `f 8322.`)
+                if not q_in_answer:
+                    q_in_answer = _PLEASED_TO_STATE_RE.search(raw_answer)
                 if q_in_answer:
                     # Re-split: everything from question start onward is the question
-                    answer_portion = raw_answer[: q_in_answer.start()]
-                    question_portion = raw_answer[q_in_answer.start() :]
+                    # Walk back to the start of the line containing the match
+                    q_line_start = raw_answer.rfind("\n", 0, q_in_answer.start())
+                    q_line_start = q_line_start + 1 if q_line_start >= 0 else 0
+                    answer_portion = raw_answer[:q_line_start]
+                    question_portion = raw_answer[q_line_start:]
                     answer_text_rev = _clean_text(_strip_footer(answer_portion))
                     question_text_rev = _clean_text(_strip_footer(question_portion))
                     if answer_text_rev and question_text_rev:
