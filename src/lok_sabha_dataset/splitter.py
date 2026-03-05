@@ -1,16 +1,22 @@
 """Split Lok Sabha Q&A markdown into question_text and answer_text.
 
 Strategy chain (ordered by reliability):
-  1. heading_answer          — split on `## ANSWER` line (~95.6% of docs)
-  2. spaced_heading_answer   — split on `## A N S W E R` (Docling artifact, ~0.8%)
-  3. standalone_answer       — split on `ANSWER` without ## prefix (~1.0%)
-  4. spaced_standalone_answer— split on `A N S W E R` without ## (~0.1%)
-  5. table_answer            — split on `| ANSWER` in table rows (~0.2%)
-  6. inline_answer           — split on mid-line `ANSWER` after punctuation (~0.1%)
-  7. minister_boundary       — split on `## MINISTER OF` line (~1.8%)
-  8. minister_boundary_bare  — split on `MINISTER OF STATE` without ## (~0.1%)
-  9. hindi_answer            — split on Hindi `उत्तर` marker (~0.01%)
-  10. unsplit                — no split possible (remainder)
+  1.  heading_answer           — split on `## ANSWER` line (~95.6% of docs)
+  2.  spaced_heading_answer    — split on `## A N S W E R` (Docling artifact, ~0.8%)
+  3.  standalone_answer        — split on `ANSWER` without ## prefix (~1.0%)
+  4.  spaced_standalone_answer — split on `A N S W E R` without ## (~0.1%)
+  5.  table_answer             — split on `| ANSWER` in table rows (~0.2%)
+  6.  inline_answer            — split on mid-line `ANSWER MINISTER` after punctuation (~0.1%)
+  7.  statement_referred       — split on `## STATEMENT REFERRED` (starred Qs)
+  8.  minister_boundary        — split on `## MINISTER OF` line (~1.8%)
+  9.  minister_boundary_bare   — split on `MINISTER OF STATE` without ## (~0.1%)
+  10. table_minister           — split on `| MINISTER` in table rows
+  11. hindi_answer             — split on Hindi `## उत्तर` marker (with spaced variants)
+  12. hindi_standalone_answer  — split on Hindi `उत्तर` standalone (line-only)
+  13. hindi_minister           — split on Hindi `## ...मंत्री` heading
+  14. inline_minister          — split on mid-line `MINISTER OF` after `?`
+  15. inline_answer_bare       — split on mid-line `ANSWER` after `?` (no MINISTER)
+  16. unsplit                  — no split possible (remainder)
 
 Each strategy also:
   - Strips the government header from the question portion
@@ -87,14 +93,22 @@ _INLINE_ANSWER_RE = re.compile(
     re.MULTILINE | re.DOTALL | re.IGNORECASE,
 )
 
-# Strategy 7: `## MINISTER OF` or `## THE MINISTER OF` (no ANSWER marker at all)
+# Strategy 7: `## STATEMENT REFERRED` — used in Starred questions where the
+# minister says "A statement is laid on the Table of the House" and the
+# actual answer follows under the STATEMENT REFERRED heading.
+_STATEMENT_REFERRED_RE = re.compile(
+    r"^(##\s*STATEMENT\s+REFERRED\b.*)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+# Strategy 8: `## MINISTER OF` or `## THE MINISTER OF` (no ANSWER marker at all)
 # Also handles OCR artifacts: `MINISTEROF` (missing space), mixed case `oF`
 _MINISTER_BOUNDARY_RE = re.compile(
     r"^(## (?:THE\s+)?MINISTER\s*(?:OF|FOR)\b.*)",
     re.MULTILINE | re.IGNORECASE,
 )
 
-# Strategy 8: `MINISTER OF ...` without `##` prefix (case-insensitive)
+# Strategy 9: `MINISTER OF ...` without `##` prefix (case-insensitive)
 # Catches patterns like "MINISTER OF STEEL (SHRI ...)", "Minister of State in the Ministry of ...",
 # "THE MINISTER OF LABOUR AND EMPLOYMENT (DR. ...)", etc.
 # Also handles OCR artifact `MINISTEROF` (missing space)
@@ -103,16 +117,50 @@ _MINISTER_BOUNDARY_BARE_RE = re.compile(
     re.MULTILINE | re.IGNORECASE,
 )
 
-# Strategy 9: MINISTER or ANSWER inside a markdown table row: `| THE MINISTER` or `| MINISTER`
+# Strategy 10: MINISTER inside a markdown table row: `| THE MINISTER` or `| MINISTER`
 _TABLE_MINISTER_RE = re.compile(
     r"^(\|\s*(?:THE\s+)?MINISTER\s+(?:OF|FOR)\b.*)",
+    re.MULTILINE | re.IGNORECASE,
+)
+
+# Strategy 11: Hindi answer marker `## उत्तर` — with spaced and garbled variants:
+#   `## उत्तर`   — standard
+#   `## उत्  तर`  — spaces inside
+#   `## उ×  तर`   — × instead of त्
+#   `## उत्  तय`  — garbled ending
+_HINDI_ANSWER_RE = re.compile(
+    r"^(##\s*उ[त×]्?\s*त[रय]\b.*)",
     re.MULTILINE,
 )
 
-# Strategy 10: Hindi answer marker `उत्तर` (with or without ## and with or without ANSWER)
-_HINDI_ANSWER_RE = re.compile(
-    r"^(##\s*उत्तर\b.*)",
+# Strategy 12: Hindi `उत्तर` standalone on its own line (no ## prefix).
+# Uses $ anchor to avoid matching `उत्तर प्रदेश` (Uttar Pradesh).
+_HINDI_STANDALONE_ANSWER_RE = re.compile(
+    r"^(उ[त×]्?\s*त[रय]\s*)$",
     re.MULTILINE,
+)
+
+# Strategy 13: Hindi minister heading — `## ... राज्य मंत्री` / `## ... मं�ी`
+# The `मंत्री` (minister) at end-of-line distinguishes from `मंत्रालय` (ministry).
+# Uses `.` to match replacement character U+FFFD in garbled encoding.
+_HINDI_MINISTER_RE = re.compile(
+    r"^(##\s+.*(?:मंत्री|मं.ी)\s*)$",
+    re.MULTILINE,
+)
+
+# Strategy 14: Mid-line MINISTER after `?` — question ends with `?` then
+# MINISTER OF STATE appears on the same line without any ANSWER marker.
+_INLINE_MINISTER_RE = re.compile(
+    r"[?]\s*((?:THE\s+)?MINISTER\s*(?:OF|FOR)\s.*)",
+    re.DOTALL | re.IGNORECASE,
+)
+
+# Strategy 15: Mid-line `ANSWER` after `?` without requiring MINISTER.
+# Catches table layouts where question column ends with `?` then `ANSWER` column starts.
+# Negative lookahead excludes preamble text like `FOR ANSWER ON 18.12.2024`.
+_INLINE_ANSWER_BARE_RE = re.compile(
+    r"[?]\s*(ANSWER\b(?!\s+ON\s+\d).*)",
+    re.DOTALL | re.IGNORECASE,
 )
 
 
@@ -192,10 +240,13 @@ def split_question_answer(full_markdown: str) -> tuple[str | None, str | None, s
         ("standalone_answer", _STANDALONE_ANSWER_RE),
         ("spaced_standalone_answer", _SPACED_STANDALONE_ANSWER_RE),
         ("table_answer", _TABLE_ANSWER_RE),
+        ("statement_referred", _STATEMENT_REFERRED_RE),
         ("minister_boundary", _MINISTER_BOUNDARY_RE),
         ("minister_boundary_bare", _MINISTER_BOUNDARY_BARE_RE),
         ("table_minister", _TABLE_MINISTER_RE),
         ("hindi_answer", _HINDI_ANSWER_RE),
+        ("hindi_standalone_answer", _HINDI_STANDALONE_ANSWER_RE),
+        ("hindi_minister", _HINDI_MINISTER_RE),
     ]:
         m = pattern.search(text)
         if m:
@@ -230,18 +281,23 @@ def split_question_answer(full_markdown: str) -> tuple[str | None, str | None, s
                     if answer_text_rev and question_text_rev:
                         return question_text_rev, answer_text_rev, strategy_name
 
-    # Inline ANSWER (mid-line, after punctuation)
-    # Handled separately because we split at the capture group, not at m.start()
-    m = _INLINE_ANSWER_RE.search(text)
-    if m:
-        raw_question = text[: m.start(1)]
-        raw_answer = text[m.start(1) :]
+    # Inline strategies — handled separately because we split at the
+    # capture group (m.start(1)), not at m.start()
+    for inline_name, inline_pattern in [
+        ("inline_answer", _INLINE_ANSWER_RE),
+        ("inline_minister", _INLINE_MINISTER_RE),
+        ("inline_answer_bare", _INLINE_ANSWER_BARE_RE),
+    ]:
+        m = inline_pattern.search(text)
+        if m:
+            raw_question = text[: m.start(1)]
+            raw_answer = text[m.start(1) :]
 
-        question_text = _clean_text(_strip_footer(_strip_header(raw_question)))
-        answer_text = _clean_text(_strip_footer(raw_answer))
+            question_text = _clean_text(_strip_footer(_strip_header(raw_question)))
+            answer_text = _clean_text(_strip_footer(raw_answer))
 
-        if question_text and answer_text:
-            return question_text, answer_text, "inline_answer"
+            if question_text and answer_text:
+                return question_text, answer_text, inline_name
 
     # No strategy matched — return unsplit
     cleaned = _clean_text(_strip_footer(_strip_header(text)))
