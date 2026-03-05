@@ -21,6 +21,9 @@ dist/
 # Claude Code
 .claude/
 
+# Pipeline data (PDFs, parsed JSON, index files)
+data/
+
 # Build output
 output/
 

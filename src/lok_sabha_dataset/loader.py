@@ -1,4 +1,4 @@
-"""Utilities for loading data from the lok-sabha-rag data directory."""
+"""Utilities for loading index/parsed data from the pipeline data directory."""
 
 from __future__ import annotations
 

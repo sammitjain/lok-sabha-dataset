@@ -1,8 +1,8 @@
-"""Build a Parquet dataset from lok-sabha-rag data.
+"""Build a Parquet dataset from pipeline data.
 
 Usage:
     uv run python -m lok_sabha_dataset.build
-    uv run python -m lok_sabha_dataset.build --source-dir /path/to/lok-sabha-rag/data
+    uv run python -m lok_sabha_dataset.build --data-dir /path/to/data
     uv run python -m lok_sabha_dataset.build --lok 18 --sessions 6-7
 """
 
@@ -17,7 +17,8 @@ from typing import Optional
 import typer
 from datasets import Dataset
 
-from lok_sabha_dataset.config import OUTPUT_DIR, SESSIONS, SOURCE_DATA_DIR
+from lok_sabha_dataset.config import DATA_DIR, OUTPUT_DIR, SESSIONS
+from lok_sabha_dataset.pipeline.utils import parse_sessions
 from lok_sabha_dataset.loader import (
     convert_date,
     load_index_session,
@@ -60,14 +61,6 @@ def _write_build_report(
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     return path
-
-
-def _parse_session_range(raw: str) -> list[int]:
-    """Parse '6-7' -> [6, 7] or '3' -> [3]."""
-    if "-" in raw:
-        lo, hi = raw.split("-", 1)
-        return list(range(int(lo), int(hi) + 1))
-    return [int(raw)]
 
 
 def _build_record(
@@ -128,17 +121,17 @@ def _build_record(
 
 @app.command()
 def build(
-    source_dir: Path = typer.Option(SOURCE_DATA_DIR, help="Path to lok-sabha-rag data/ directory"),
+    source_dir: Path = typer.Option(DATA_DIR, "--data-dir", help="Root data directory (contains <lok_no>/ subdirectories)"),
     output_dir: Path = typer.Option(OUTPUT_DIR, help="Output directory for Parquet files"),
     lok: int = typer.Option(18, help="Lok Sabha number to process"),
-    sessions: Optional[str] = typer.Option(None, help="Session range (e.g. '2-7' or '6'). Default: all configured sessions"),
+    sessions: Optional[str] = typer.Option(None, help="Sessions (e.g. '2-7', '6', '2,5-7'). Default: all configured sessions"),
 ) -> None:
-    """Build a Parquet dataset from lok-sabha-rag index + parsed data."""
+    """Build a Parquet dataset from index + parsed data."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
     # Determine sessions to process
     if sessions:
-        session_list = _parse_session_range(sessions)
+        session_list = parse_sessions(sessions)
     else:
         session_list = SESSIONS.get(lok, [])
         if not session_list:
@@ -184,7 +177,7 @@ def build(
     logger.info("Total: %d records, %d with issues", total_index, len(issues))
 
     if not records:
-        logger.error("No records found. Check --source-dir and --lok/--sessions.")
+        logger.error("No records found. Check --data-dir and --lok/--sessions.")
         raise typer.Exit(1)
 
     # Q/A split distribution

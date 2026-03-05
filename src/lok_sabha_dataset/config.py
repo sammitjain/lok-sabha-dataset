@@ -1,14 +1,13 @@
-"""Centralized configuration for dataset builds."""
+"""Centralized configuration for the lok-sabha-dataset pipeline."""
 
 from __future__ import annotations
 
 import os
 from pathlib import Path
 
-# Path to the lok-sabha-rag data directory (contains 17/, 18/, metadata.db, etc.)
-SOURCE_DATA_DIR: Path = Path(
-    os.getenv("LOKSABHA_RAG_DATA_DIR", str(Path.home() / "Downloads" / "lok-sabha-rag" / "data"))
-)
+# Root data directory for the pipeline (contains <lok_no>/ subdirectories).
+# Override via env var or --data-dir CLI options on individual commands.
+DATA_DIR: Path = Path(os.getenv("LOKSABHA_DATA_DIR", "data"))
 
 # Where built datasets are written
 OUTPUT_DIR: Path = Path(os.getenv("LOKSABHA_DATASET_OUTPUT_DIR", "output"))
