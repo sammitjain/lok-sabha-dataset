@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import sys
 from pathlib import Path
 from typing import Optional
@@ -119,60 +120,90 @@ def _build_record(
     }
 
 
+def _discover_loks(source_dir: Path) -> list[int]:
+    """Auto-discover Lok Sabha numbers from numbered subdirectories in source_dir."""
+    loks = []
+    for d in sorted(source_dir.iterdir()):
+        if d.is_dir() and d.name.isdigit():
+            # Must have at least one index file to be a valid lok directory
+            if list(d.glob("index_session_*.jsonl")):
+                loks.append(int(d.name))
+    return loks
+
+
 @app.command()
 def build(
     source_dir: Path = typer.Option(DATA_DIR, "--data-dir", help="Root data directory (contains <lok_no>/ subdirectories)"),
     output_dir: Path = typer.Option(OUTPUT_DIR, help="Output directory for Parquet files"),
-    lok: int = typer.Option(18, help="Lok Sabha number to process"),
+    lok: Optional[int] = typer.Option(None, help="Lok Sabha number (omit to auto-discover all)"),
     sessions: Optional[str] = typer.Option(None, help="Sessions (e.g. '2-7', '6', '2,5-7'). Default: all configured sessions"),
 ) -> None:
     """Build a Parquet dataset from index + parsed data."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 
-    # Determine sessions to process
-    if sessions:
-        session_list = parse_sessions(sessions)
+    # Determine which loks to process
+    if lok is not None:
+        loks = [lok]
     else:
-        session_list = SESSIONS.get(lok, [])
-        if not session_list:
-            logger.error("No sessions configured for Lok Sabha %d", lok)
+        loks = _discover_loks(source_dir)
+        if not loks:
+            logger.error("No Lok Sabha data directories found in %s", source_dir)
             raise typer.Exit(1)
+        logger.info("Auto-discovered Lok Sabhas: %s", loks)
 
-    logger.info("Building dataset for Lok Sabha %d, sessions %s", lok, session_list)
     logger.info("Source: %s", source_dir)
 
     records: list[dict] = []
     issues: list[dict] = []
     total_index = 0
 
-    for sess in session_list:
-        index_rows = load_index_session(source_dir, lok, sess)
-        sess_issues = 0
+    for current_lok in loks:
+        # Determine sessions to process for this lok
+        if sessions:
+            session_list = parse_sessions(sessions)
+        else:
+            session_list = SESSIONS.get(current_lok, [])
+            if not session_list:
+                # Fallback: discover sessions from index files
+                session_list = sorted(
+                    int(m.group(1))
+                    for f in (source_dir / str(current_lok)).glob("index_session_*.jsonl")
+                    if (m := re.search(r"index_session_(\d+)\.jsonl$", f.name))
+                )
+            if not session_list:
+                logger.warning("No sessions found for Lok Sabha %d, skipping", current_lok)
+                continue
 
-        for row in index_rows:
-            total_index += 1
-            pdf_fname = pdf_filename_from_url(row.get("questionsFilePath"))
-            parsed = None
-            if pdf_fname:
-                parsed = load_parsed_json(source_dir, lok, sess, pdf_fname)
+        logger.info("Lok Sabha %d: sessions %s", current_lok, session_list)
 
-            issue = _classify_issue(row, parsed)
-            if issue:
-                sess_issues += 1
-                issues.append({
-                    "id": f"LS{lok}-S{sess}-{row.get('type', '')}-{row.get('ques_no')}",
-                    "session": sess,
-                    "pdf_filename": pdf_fname,
-                    "issue": issue,
-                    "engine": parsed.get("engine") if parsed else None,
-                })
+        for sess in session_list:
+            index_rows = load_index_session(source_dir, current_lok, sess)
+            sess_issues = 0
 
-            records.append(_build_record(row, parsed))
+            for row in index_rows:
+                total_index += 1
+                pdf_fname = pdf_filename_from_url(row.get("questionsFilePath"))
+                parsed = None
+                if pdf_fname:
+                    parsed = load_parsed_json(source_dir, current_lok, sess, pdf_fname)
 
-        logger.info(
-            "  Session %d: %d questions, %d issues",
-            sess, len(index_rows), sess_issues,
-        )
+                issue = _classify_issue(row, parsed)
+                if issue:
+                    sess_issues += 1
+                    issues.append({
+                        "id": f"LS{current_lok}-S{sess}-{row.get('type', '')}-{row.get('ques_no')}",
+                        "session": sess,
+                        "pdf_filename": pdf_fname,
+                        "issue": issue,
+                        "engine": parsed.get("engine") if parsed else None,
+                    })
+
+                records.append(_build_record(row, parsed))
+
+            logger.info(
+                "  Session %d: %d questions, %d issues",
+                sess, len(index_rows), sess_issues,
+            )
 
     logger.info("Total: %d records, %d with issues", total_index, len(issues))
 

@@ -8,24 +8,81 @@
   A structured dataset of Indian Lok Sabha parliamentary question-and-answer records for NLP research and transparency.
 </p>
 
+<p align="center">
+  <a href="https://huggingface.co/datasets/opensansad/lok-sabha-qa">View on HuggingFace</a>
+</p>
+
 Part of the **OpenSansad** initiative — a personal project to make Sansad's (Indian Parliament's) workings more accessible and transparent through open data and open-source tooling. Data sourced from [Digital Sansad](https://sansad.in/).
 
-## Setup
+## Dataset at a Glance
+
+| | 18th Lok Sabha | 17th Lok Sabha |
+|---|---|---|
+| **Period** | 2024–2026 | 2019–2024 |
+| **Sessions** | 2–7 | 1–15 |
+| **Questions** | 25,974 | 60,549 |
+| **Text extracted** | 25,973 | in progress |
+| **Unique MPs** | 466 | 830 |
+
+**Total: 86,500+ records** across 64 ministries covering both starred (oral) and unstarred (written) parliamentary questions.
+
+## Quick Start
+
+```python
+from datasets import load_dataset
+
+ds = load_dataset("opensansad/lok-sabha-qa")
+
+# Filter by ministry
+health = ds["train"].filter(lambda x: "HEALTH" in (x["ministry"] or ""))
+
+# Filter by Lok Sabha and session
+lok18_s4 = ds["train"].filter(lambda x: x["lok_no"] == 18 and x["session_no"] == 4)
+
+# Starred questions only
+starred = ds["train"].filter(lambda x: x["type"] == "STARRED")
+```
+
+## Pipeline
+
+This repo contains the full data pipeline — self-contained, no external dependencies:
+
+```
+1. Curate   →  Fetch metadata from sansad.in API
+2. Download →  Download source PDFs
+3. Extract  →  Extract text from PDFs (Docling + EasyOCR fallback)
+4. Build    →  Assemble into Parquet dataset
+5. Publish  →  Push to HuggingFace Hub
+```
+
+### Setup
 
 ```bash
 uv sync
 ```
 
-## Build
+### Run the pipeline
 
 ```bash
-# Build dataset from default data directory
+# 1. Curate metadata for a Lok Sabha
+uv run python -m lok_sabha_dataset.pipeline.curate --lok 18
+
+# 2. Download PDFs
+uv run python -m lok_sabha_dataset.pipeline.download run --lok 18
+
+# 3. Extract text from PDFs
+uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18
+
+# 4. Build parquet (auto-discovers all loks in data/)
 uv run python -m lok_sabha_dataset.build
 
-# Specify custom source directory
-uv run python -m lok_sabha_dataset.build --source-dir /path/to/lok-sabha-rag/data
+# 5. Publish to HuggingFace
+uv run python -m lok_sabha_dataset.publish --push
+```
 
-# Build specific sessions only
+### Build specific sessions
+
+```bash
 uv run python -m lok_sabha_dataset.build --lok 18 --sessions 6-7
 ```
 
@@ -33,12 +90,15 @@ Output is written to `output/lok_sabha_qa.parquet`.
 
 ## Configuration
 
-Set `LOKSABHA_RAG_DATA_DIR` to point to your `lok-sabha-rag/data/` directory:
+Override the data directory via environment variable:
 
 ```bash
-export LOKSABHA_RAG_DATA_DIR=/path/to/lok-sabha-rag/data
+export LOKSABHA_DATA_DIR=/path/to/data
 ```
 
-## Data Source
+Default is `data/` in the repo root.
 
-This dataset is built from data processed by the [lok-sabha-rag](https://github.com/sammitjain/lok-sabha-rag) project, which ingests parliamentary Q&A records from the Digital Sansad portal (sansad.in).
+## Related
+
+- **[lok-sabha-rag](https://github.com/sammitjain/lok-sabha-rag)** — RAG application built on this dataset for querying parliamentary proceedings
+- **[opensansad/lok-sabha-qa](https://huggingface.co/datasets/opensansad/lok-sabha-qa)** — The published dataset on HuggingFace
