@@ -21,7 +21,7 @@ Part of the **OpenSansad** initiative — a personal project to make Sansad's (I
 | **Period** | 2024–2026 | 2019–2024 |
 | **Sessions** | 2–7 | 1–15 |
 | **Questions** | 25,974 | 60,549 |
-| **Text extracted** | 25,973 | in progress |
+| **Text extracted** | 25,973 | 10,934 (sessions 1–2) |
 | **Unique MPs** | 466 | 830 |
 
 **Total: 86,500+ records** across 64 ministries covering both starred (oral) and unstarred (written) parliamentary questions.
@@ -70,8 +70,9 @@ uv run python -m lok_sabha_dataset.pipeline.curate --lok 18
 # 2. Download PDFs
 uv run python -m lok_sabha_dataset.pipeline.download run --lok 18
 
-# 3. Extract text from PDFs
-uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18
+# 3. Extract text from PDFs (two-pass for speed)
+uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18 --engine docling
+uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18 --engine easyocr --retry-empty
 
 # 4. Build parquet (auto-discovers all loks in data/)
 uv run python -m lok_sabha_dataset.build

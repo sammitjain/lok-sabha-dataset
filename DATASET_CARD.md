@@ -81,7 +81,7 @@ dataset_info:
 This dataset contains **86,500+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
 
 - **18th Lok Sabha** — 25,974 questions across sessions 2–7 (Jul 2024 — Feb 2026), fully extracted with question/answer text
-- **17th Lok Sabha** — 60,549 questions across sessions 1–15 (Jun 2019 — Feb 2024), metadata and PDF links available; **text extraction is in progress**
+- **17th Lok Sabha** — 60,549 questions across sessions 1–15 (Jun 2019 — Feb 2024), metadata and PDF links available; **sessions 1–2 extracted (~10,900 records), remaining sessions in progress**
 
 Each record contains rich metadata including the responsible ministry, subject, date, MP names, and links to the original source PDFs on [Digital Sansad](https://sansad.in/). For records where text extraction is complete, the full question and official government answer are included.
 
@@ -167,8 +167,8 @@ The dataset is provided as a single `train` split. Users can create custom split
 
 | Session | Starred | Unstarred | Total | Text available |
 |---------|---------|-----------|-------|----------------|
-| 1 | 500 | 5,698 | 6,198 | partial |
-| 2 | 380 | 4,369 | 4,749 | pending |
+| 1 | 500 | 5,698 | 6,198 | 6,188 extracted |
+| 2 | 380 | 4,369 | 4,749 | 4,746 extracted |
 | 3 | 419 | 4,818 | 5,237 | pending |
 | 4 | 0 | 2,301 | 2,301 | pending |
 | 5 | 440 | 5,057 | 5,497 | pending |
@@ -211,7 +211,7 @@ This dataset contains only publicly available parliamentary records. The names o
 
 - **OCR artifacts:** Text is extracted from PDFs, some of which have corrupted embedded text layers. This can result in garbled characters in a small number of records (~0.05% remain unsplit due to severe OCR issues).
 - **Q/A separation:** The question-answer split is automated and may occasionally include header/footer text or split at imprecise boundaries.
-- **Coverage:** Currently covers the 17th (2019–2024) and 18th (2024–2026) Lok Sabhas. The 18th Lok Sabha is fully extracted; the 17th Lok Sabha has metadata and PDF URLs for all 60,500+ questions, with text extraction in progress.
+- **Coverage:** Currently covers the 17th (2019–2024) and 18th (2024–2026) Lok Sabhas. The 18th Lok Sabha is fully extracted; the 17th Lok Sabha has sessions 1–2 extracted (~10,900 records with text) and remaining sessions have metadata and PDF URLs with text extraction in progress.
 - **Hindi records:** A small subset of records are in Hindi. The Q/A separation for Hindi text relies on Hindi-specific markers and may be less reliable than for English records.
 
 ### Future Improvements
