@@ -36,13 +36,6 @@ from typing import Iterable, List, Optional
 
 import typer
 
-from docling.datamodel.base_models import InputFormat
-from docling.datamodel.pipeline_options import (
-    EasyOcrOptions,
-    PdfPipelineOptions,
-)
-from docling.document_converter import DocumentConverter, PdfFormatOption
-
 from lok_sabha_dataset.config import DATA_DIR
 from lok_sabha_dataset.pipeline.utils import parse_sessions
 
@@ -50,16 +43,21 @@ app = typer.Typer(no_args_is_help=True)
 
 
 # ── Lazy-loaded converters ────────────────────────────────────────────────────
-# Avoids slow startup (model downloads) when OCR isn't needed.
+# All docling/easyocr imports are deferred to avoid loading heavy libs
+# until actually needed.  Running with --engine docling never touches EasyOCR.
 
-_converter_default: DocumentConverter | None = None
-_converter_ocr: DocumentConverter | None = None
+_converter_default = None
+_converter_ocr = None
 
 
-def _get_default_converter() -> DocumentConverter:
+def _get_default_converter():
     """Docling converter without OCR — fast, for text-layer PDFs."""
     global _converter_default
     if _converter_default is None:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import PdfPipelineOptions
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
         _converter_default = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
@@ -70,10 +68,17 @@ def _get_default_converter() -> DocumentConverter:
     return _converter_default
 
 
-def _get_ocr_converter() -> DocumentConverter:
+def _get_ocr_converter():
     """Docling converter with EasyOCR — slower, for scanned/image PDFs."""
     global _converter_ocr
     if _converter_ocr is None:
+        from docling.datamodel.base_models import InputFormat
+        from docling.datamodel.pipeline_options import (
+            EasyOcrOptions,
+            PdfPipelineOptions,
+        )
+        from docling.document_converter import DocumentConverter, PdfFormatOption
+
         _converter_ocr = DocumentConverter(
             format_options={
                 InputFormat.PDF: PdfFormatOption(
@@ -168,6 +173,17 @@ def _iter_pdf_files(pdf_dir: Path) -> Iterable[Path]:
     yield from sorted(pdf_dir.glob("*.pdf"))
 
 
+def _parsed_has_text(out_path: Path) -> bool:
+    """Check if a parsed JSON file has non-empty extracted text."""
+    try:
+        with out_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        text = data.get("full_markdown") or data.get("full_text") or ""
+        return bool(text.strip())
+    except Exception:
+        return False
+
+
 # ── Commands ──────────────────────────────────────────────────────────────────
 
 
@@ -176,6 +192,8 @@ def run(
     lok: int = typer.Option(..., help="Lok Sabha number"),
     sessions: str = typer.Option(..., help="Sessions like '7' or '1-7' or '1,3,7'"),
     base_dir: str = typer.Option(str(DATA_DIR), "--data-dir", help="Base data directory"),
+    engine: str = typer.Option("auto", help="Engine: 'auto' (docling + OCR fallback), 'docling' (no OCR), 'easyocr' (force OCR)"),
+    retry_empty: bool = typer.Option(False, "--retry-empty", help="Re-process files whose parsed JSON has empty text (use with --engine easyocr)"),
     overwrite: bool = typer.Option(False, help="Re-extract even if parsed JSON exists"),
     sleep_min: float = typer.Option(0.0, help="Optional min seconds between PDFs"),
     sleep_max: float = typer.Option(0.0, help="Optional max seconds between PDFs"),
@@ -192,11 +210,14 @@ def run(
     processed = 0
     extracted = 0
     skipped = 0
+    retried = 0
     errors = 0
     ocr_fallbacks = 0
 
     last_report = time.time()
     report_interval = 15
+
+    print(f"Engine: {engine}" + (" (retry-empty)" if retry_empty else ""))
 
     for sess in sess_list:
         pdf_dir = base / "pdfs" / f"session_{sess}"
@@ -213,11 +234,23 @@ def run(
             processed += 1
             out_path = out_dir / f"{pdf_path.stem}.json"
 
-            if out_path.exists() and not overwrite:
+            # Decide whether to process this file
+            should_process = False
+            if overwrite:
+                should_process = True
+            elif retry_empty:
+                # Only re-process files that exist but have empty text
+                if out_path.exists() and not _parsed_has_text(out_path):
+                    should_process = True
+                    retried += 1
+            elif not out_path.exists():
+                should_process = True
+
+            if not should_process:
                 skipped += 1
             else:
                 try:
-                    parsed = extract_single_pdf(pdf_path, engine="auto")
+                    parsed = extract_single_pdf(pdf_path, engine=engine)
 
                     if parsed.get("ocr_fallback"):
                         ocr_fallbacks += 1
@@ -240,7 +273,7 @@ def run(
             if now - last_report >= report_interval:
                 print(
                     f"Progress: processed={processed} extracted={extracted} "
-                    f"skipped={skipped} errors={errors} ocr_fallbacks={ocr_fallbacks}"
+                    f"skipped={skipped} retried={retried} errors={errors} ocr_fallbacks={ocr_fallbacks}"
                 )
                 last_report = now
 
@@ -257,7 +290,7 @@ def run(
     print("\nDone.")
     print(
         f"Processed={processed} extracted={extracted} skipped={skipped} "
-        f"errors={errors} ocr_fallbacks={ocr_fallbacks}"
+        f"retried={retried} errors={errors} ocr_fallbacks={ocr_fallbacks}"
     )
     print(f"Failed log: {failed_log}")
 
