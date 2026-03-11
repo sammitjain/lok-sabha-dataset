@@ -165,23 +165,23 @@ The dataset is provided as a single `train` split. Users can create custom split
 
 #### 17th Lok Sabha (2019–2024) — text extraction in progress
 
-| Session | Starred | Unstarred | Total | Text available |
-|---------|---------|-----------|-------|----------------|
-| 1 | 500 | 5,698 | 6,198 | 6,188 extracted |
-| 2 | 380 | 4,369 | 4,749 | 4,746 extracted |
-| 3 | 419 | 4,818 | 5,237 | 5,237 extracted |
-| 4 | 0 | 2,301 | 2,301 | 2,301 extracted |
-| 5 | 440 | 5,057 | 5,497 | 5,493 extracted |
-| 6 | 320 | 3,679 | 3,999 | 3,999 extracted |
-| 7 | 339 | 3,909 | 4,248 | 4,248 extracted |
-| 8 | 500 | 5,749 | 6,249 | 6,249 extracted |
-| 9 | 319 | 3,672 | 3,991 | pending |
-| 10 | 239 | 2,759 | 2,998 | pending |
-| 11 | 480 | 5,520 | 6,000 | pending |
-| 12 | 340 | 3,910 | 4,250 | pending |
-| 14 | 267 | 3,066 | 3,333 | pending |
-| 15 | 120 | 1,379 | 1,499 | pending |
-| **Total** | **4,663** | **55,886** | **60,549** | |
+| Session | Period | Starred | Unstarred | Total | Text available |
+|---------|--------|---------|-----------|-------|----------------|
+| 1 | Jun — Aug 2019 | 500 | 5,698 | 6,198 | 6,188 extracted |
+| 2 | Nov — Dec 2019 | 380 | 4,369 | 4,749 | 4,746 extracted |
+| 3 | Jan — Mar 2020 | 419 | 4,818 | 5,237 | 5,237 extracted |
+| 4 | Sep 2020 | 0 | 2,301 | 2,301 | 2,301 extracted |
+| 5 | Jan — Mar 2021 | 440 | 5,057 | 5,497 | 5,493 extracted |
+| 6 | Jul — Aug 2021 | 320 | 3,679 | 3,999 | 3,999 extracted |
+| 7 | Nov — Dec 2021 | 339 | 3,909 | 4,248 | 4,248 extracted |
+| 8 | Jan — Apr 2022 | 500 | 5,749 | 6,249 | 6,249 extracted |
+| 9 | Jul — Aug 2022 | 319 | 3,672 | 3,991 | pending |
+| 10 | Dec 2022 | 239 | 2,759 | 2,998 | pending |
+| 11 | Jan — Apr 2023 | 480 | 5,520 | 6,000 | pending |
+| 12 | Jul — Aug 2023 | 340 | 3,910 | 4,250 | pending |
+| 14 | Dec 2023 | 267 | 3,066 | 3,333 | pending |
+| 15 | Jan — Feb 2024 | 120 | 1,379 | 1,499 | pending |
+| **Total** | | **4,663** | **55,886** | **60,549** | |
 
 > **Note:** 17th Lok Sabha text extraction is actively underway. Records without extracted text still contain full metadata (subject, ministry, members, dates) and PDF URLs. The dataset will be updated incrementally as extraction completes.
 
