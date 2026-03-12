@@ -47,6 +47,8 @@ starred = ds["train"].filter(lambda x: x["type"] == "STARRED")
 
 This repo contains the full data pipeline — self-contained, no external dependencies:
 
+![Ingestion Pipeline](docs/assets/ingestion_pipeline.png)
+
 ```
 1. Curate   →  Fetch metadata from sansad.in API
 2. Download →  Download source PDFs
