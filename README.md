@@ -20,11 +20,11 @@ Part of the **OpenSansad** initiative — a personal project to make Sansad's (I
 |---|---|---|
 | **Period** | 2024–2026 | 2019–2024 |
 | **Sessions** | 2–7 | 1–15 |
-| **Questions** | 25,974 | 60,549 |
-| **Text extracted** | 25,973 | 55,700 (sessions 1–12) |
-| **Unique MPs** | 466 | 830 |
+| **Questions** | 27,224 | 60,549 |
+| **Text extracted** | 27,223 | 55,700 (sessions 1–12) |
+| **Unique MPs** | 466 | 505 |
 
-**Total: 86,500+ records** across 64 ministries covering both starred (oral) and unstarred (written) parliamentary questions.
+**Total: 87,700+ records** across 64 ministries covering both starred (oral) and unstarred (written) parliamentary questions.
 
 ## Quick Start
 
