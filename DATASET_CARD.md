@@ -61,8 +61,8 @@ dataset_info:
 ---
 
 <p align="center">
-  <img src="OpenSansad_Logo_light.svg#hf-light-mode-only" alt="OpenSansad Logo" width="200">
-  <img src="OpenSansad_Logo_dark.svg#hf-dark-mode-only" alt="OpenSansad Logo" width="200">
+  <img class="hidden dark:block" src="OpenSansad_Logo_dark.svg" alt="OpenSansad Logo" width="200">
+  <img class="dark:hidden" src="OpenSansad_Logo_light.svg" alt="OpenSansad Logo" width="200">
 </p>
 
 <h1 align="center">OpenSansad — Lok Sabha Q&A Dataset</h1>
