@@ -1,5 +1,9 @@
 <p align="center">
-  <img src="docs/assets/OpenSansad_Logo.png" alt="OpenSansad Logo" width="200">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/assets/OpenSansad_Logo_dark.svg">
+    <source media="(prefers-color-scheme: light)" srcset="docs/assets/OpenSansad_Logo_light.svg">
+    <img src="docs/assets/OpenSansad_Logo_light.svg" alt="OpenSansad Logo" width="200">
+  </picture>
 </p>
 
 <h1 align="center">OpenSansad — Lok Sabha Q&A Dataset</h1>
