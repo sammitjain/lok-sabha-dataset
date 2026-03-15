@@ -82,7 +82,7 @@ dataset_info:
 This dataset contains **87,700+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
 
 - **18th Lok Sabha** — 27,224 questions across sessions 2–7 (Jul 2024 — Mar 2026), fully extracted with question/answer text
-- **17th Lok Sabha** — 60,549 questions across sessions 1–15 (Jun 2019 — Feb 2024), metadata and PDF links available; **sessions 1–12 extracted (~55,700 records), remaining sessions in progress**
+- **17th Lok Sabha** — 60,549 questions across sessions 1–15 (Jun 2019 — Feb 2024), metadata and PDF links available; **sessions 1–12, 14–15 extracted (~60,500 records), session 13 pending**
 
 Each record contains rich metadata including the responsible ministry, subject, date, MP names, and links to the original source PDFs on [Digital Sansad](https://sansad.in/). For records where text extraction is complete, the full question and official government answer are included.
 
@@ -180,8 +180,8 @@ The dataset is provided as a single `train` split. Users can create custom split
 | 10 | Dec — Dec 2022 | 239 | 2,759 | 2,998 | 2,998 extracted |
 | 11 | Jan — Apr 2023 | 480 | 5,520 | 6,000 | 6,000 extracted |
 | 12 | Jul — Aug 2023 | 340 | 3,910 | 4,250 | 4,250 extracted |
-| 14 | Dec — Dec 2023 | 267 | 3,066 | 3,333 | pending |
-| 15 | Jan — Feb 2024 | 120 | 1,379 | 1,499 | pending |
+| 14 | Dec — Dec 2023 | 267 | 3,066 | 3,333 | 3,331 extracted |
+| 15 | Feb — Feb 2024 | 120 | 1,379 | 1,499 | 1,499 extracted |
 | **Total** | | **4,663** | **55,886** | **60,549** | |
 
 > **Note:** 17th Lok Sabha text extraction is actively underway. Records without extracted text still contain full metadata (subject, ministry, members, dates) and PDF URLs. The dataset will be updated incrementally as extraction completes.
@@ -212,12 +212,12 @@ This dataset contains only publicly available parliamentary records. The names o
 
 - **OCR artifacts:** Text is extracted from PDFs, some of which have corrupted embedded text layers. This can result in garbled characters in a small number of records (~0.05% remain unsplit due to severe OCR issues).
 - **Q/A separation:** The question-answer split is automated and may occasionally include header/footer text or split at imprecise boundaries.
-- **Coverage:** Currently covers the 17th (2019–2024) and 18th (2024–2026) Lok Sabhas. The 18th Lok Sabha is fully extracted (~27,200 records); the 17th Lok Sabha has sessions 1–12 extracted (~55,700 records with text) and remaining sessions have metadata and PDF URLs with text extraction in progress.
+- **Coverage:** Currently covers the 17th (2019–2024) and 18th (2024–2026) Lok Sabhas. The 18th Lok Sabha is fully extracted (~27,200 records); the 17th Lok Sabha has sessions 1–12 and 14–15 extracted (~60,500 records with text), session 13 has metadata and PDF URLs with text extraction in progress.
 - **Hindi records:** A small subset of records are in Hindi. The Q/A separation for Hindi text relies on Hindi-specific markers and may be less reliable than for English records.
 
 ### Future Improvements
 
-- **Complete 17th Lok Sabha extraction:** Finish text extraction for all 60,500+ records currently pending
+- **Complete 17th Lok Sabha extraction:** Finish text extraction for session 13 (~5,000 records currently pending)
 - **Earlier Lok Sabhas:** Expand coverage to include 16th and older parliamentary data
 - **OCR fallback:** Re-extract garbled PDFs using image-based OCR for the remaining unsplit records
 - **Minister extraction:** Extract and normalize the answering minister's name as a structured field
