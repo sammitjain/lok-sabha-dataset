@@ -9,6 +9,10 @@
 <h1 align="center">OpenSansad — Lok Sabha Q&A Dataset</h1>
 
 <p align="center">
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY%204.0-lightgrey.svg" alt="CC BY 4.0"></a>
+</p>
+
+<p align="center">
   A structured dataset of Indian Lok Sabha parliamentary question-and-answer records for NLP research and transparency.
 </p>
 
