@@ -57,7 +57,7 @@ dataset_info:
       dtype: float64
   splits:
     - name: train
-      num_examples: 89764
+      num_examples: 95154
 ---
 
 <p align="center">
@@ -79,11 +79,11 @@ dataset_info:
 
 ### Dataset Summary
 
-This dataset contains **89,700+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
+This dataset contains **95,100+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
 
-- **18th Lok Sabha** — 27,224 questions across sessions 2–7 (Jul 2024 — Mar 2026), fully extracted with question/answer text
+- **18th Lok Sabha** — 27,723 questions across sessions 2–7 (Jul 2024 — Mar 2026), fully extracted with question/answer text
 - **17th Lok Sabha** — 60,549 questions across sessions 1–12, 14–15 (Jun 2019 — Feb 2024), fully extracted with question/answer text
-- **16th Lok Sabha** — 1,991 questions from session 17 (Feb 2019), fully extracted with question/answer text
+- **16th Lok Sabha** — 6,882 questions from sessions 16–17 (Dec 2018 — Feb 2019), fully extracted with question/answer text
 
 Each record contains rich metadata including the responsible ministry, subject, date, MP names, and links to the original source PDFs on [Digital Sansad](https://sansad.in/). For records where text extraction is complete, the full question and official government answer are included.
 
