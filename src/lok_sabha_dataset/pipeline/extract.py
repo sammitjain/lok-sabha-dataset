@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import random
+import re
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -173,6 +174,11 @@ def _iter_pdf_files(pdf_dir: Path) -> Iterable[Path]:
     yield from sorted(pdf_dir.glob("*.pdf"))
 
 
+_IMAGE_COMMENT_RE = re.compile(r"<!--\s*image\s*-->")
+
+MIN_USABLE_WORDS = 15
+
+
 def _parsed_has_text(out_path: Path) -> bool:
     """Check if a parsed JSON file has non-empty extracted text."""
     try:
@@ -180,6 +186,32 @@ def _parsed_has_text(out_path: Path) -> bool:
             data = json.load(f)
         text = data.get("full_markdown") or data.get("full_text") or ""
         return bool(text.strip())
+    except Exception:
+        return False
+
+
+def _parsed_is_usable(out_path: Path) -> bool:
+    """Check if a parsed JSON file has meaningful extracted text.
+
+    Returns False for:
+    - Empty text
+    - Text that is only HTML image comments (``<!-- image -->``)
+    - Text with fewer than MIN_USABLE_WORDS real words
+    """
+    try:
+        with out_path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+        text = data.get("full_markdown") or data.get("full_text") or ""
+        stripped = text.strip()
+        if not stripped:
+            return False
+        # Strip HTML comments and check what's left
+        without_comments = _IMAGE_COMMENT_RE.sub("", stripped).strip()
+        if not without_comments:
+            return False
+        if len(without_comments.split()) < MIN_USABLE_WORDS:
+            return False
+        return True
     except Exception:
         return False
 
@@ -194,6 +226,7 @@ def run(
     base_dir: str = typer.Option(str(DATA_DIR), "--data-dir", help="Base data directory"),
     engine: str = typer.Option("auto", help="Engine: 'auto' (docling + OCR fallback), 'docling' (no OCR), 'easyocr' (force OCR)"),
     retry_empty: bool = typer.Option(False, "--retry-empty", help="Re-process files whose parsed JSON has empty text (use with --engine easyocr)"),
+    retry_low_confidence: bool = typer.Option(False, "--retry-low-confidence", help="Re-process files with empty or low-quality text (e.g. only '<!-- image -->')"),
     overwrite: bool = typer.Option(False, help="Re-extract even if parsed JSON exists"),
     sleep_min: float = typer.Option(0.0, help="Optional min seconds between PDFs"),
     sleep_max: float = typer.Option(0.0, help="Optional max seconds between PDFs"),
@@ -217,7 +250,8 @@ def run(
     last_report = time.time()
     report_interval = 15
 
-    print(f"Engine: {engine}" + (" (retry-empty)" if retry_empty else ""))
+    retry_mode = " (retry-low-confidence)" if retry_low_confidence else (" (retry-empty)" if retry_empty else "")
+    print(f"Engine: {engine}{retry_mode}")
 
     for sess in sess_list:
         pdf_dir = base / "pdfs" / f"session_{sess}"
@@ -238,6 +272,11 @@ def run(
             should_process = False
             if overwrite:
                 should_process = True
+            elif retry_low_confidence:
+                # Re-process files with empty or low-quality extractions
+                if out_path.exists() and not _parsed_is_usable(out_path):
+                    should_process = True
+                    retried += 1
             elif retry_empty:
                 # Only re-process files that exist but have empty text
                 if out_path.exists() and not _parsed_has_text(out_path):
