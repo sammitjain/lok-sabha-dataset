@@ -4,6 +4,7 @@ Usage:
     uv run python -m lok_sabha_dataset.build
     uv run python -m lok_sabha_dataset.build --data-dir /path/to/data
     uv run python -m lok_sabha_dataset.build --lok 18 --sessions 6-7
+    uv run python -m lok_sabha_dataset.build --reconcile   # merge with existing HF dataset
 """
 
 from __future__ import annotations
@@ -11,7 +12,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -62,6 +62,93 @@ def _write_build_report(
     with open(path, "w", encoding="utf-8") as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
     return path
+
+
+def _write_issues_log(issues: list[dict], output_dir: Path) -> Path:
+    """Write detailed issue entries to a JSONL file."""
+    path = output_dir / "build_issues.jsonl"
+    with open(path, "w", encoding="utf-8") as f:
+        for entry in issues:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    return path
+
+
+def _reconcile_with_hf(
+    local_records: list[dict],
+    local_issues: set[str],
+    repo_id: str,
+) -> list[dict]:
+    """Merge locally-built records with the existing HuggingFace dataset.
+
+    Logic:
+    - Start with all rows from the HF dataset as a base.
+    - Overwrite with locally-built records that have no issues (successful parse).
+    - Keep HF version for records where local build had issues (missing/empty).
+    - Add any fresh local rows not present in HF.
+    """
+    from datasets import load_dataset
+
+    logger.info("Downloading existing dataset from HuggingFace: %s", repo_id)
+    try:
+        hf_ds = load_dataset(repo_id, split="train")
+    except Exception as e:
+        logger.warning("Could not load HF dataset (%s). Using local build only.", e)
+        return local_records
+
+    # Columns that exist in local build but are dropped before HF publish.
+    # Backfill with None so schemas align when preserving HF rows.
+    _INTERNAL_COLS = [
+        "answering_minister", "pdf_filename", "extraction_engine",
+        "qa_split_method", "full_text_word_count",
+    ]
+
+    # Index HF rows by id, backfilling missing internal columns
+    hf_by_id: dict[str, dict] = {}
+    for row in hf_ds:
+        d = dict(row)
+        for col in _INTERNAL_COLS:
+            d.setdefault(col, None)
+        hf_by_id[d["id"]] = d
+
+    logger.info("HF dataset has %d rows", len(hf_by_id))
+
+    # Index local rows by id
+    local_by_id: dict[str, dict] = {}
+    for rec in local_records:
+        local_by_id[rec["id"]] = rec
+
+    # Build merged result
+    merged: dict[str, dict] = {}
+
+    # Start with all HF rows
+    merged.update(hf_by_id)
+
+    # Overwrite with local records that have no issues
+    overwritten = 0
+    kept_hf = 0
+    fresh = 0
+    for rec_id, rec in local_by_id.items():
+        if rec_id in local_issues:
+            # Local build had issues — keep HF version if available
+            if rec_id in merged:
+                kept_hf += 1
+            else:
+                # No HF version either, use local (with issues)
+                merged[rec_id] = rec
+        else:
+            # Successful local build — overwrite
+            if rec_id in merged:
+                overwritten += 1
+            else:
+                fresh += 1
+            merged[rec_id] = rec
+
+    logger.info(
+        "Reconciliation: %d overwritten, %d preserved from HF, %d fresh, %d total",
+        overwritten, kept_hf, fresh, len(merged),
+    )
+
+    return list(merged.values())
 
 
 def _build_record(
@@ -137,6 +224,8 @@ def build(
     output_dir: Path = typer.Option(OUTPUT_DIR, help="Output directory for Parquet files"),
     lok: Optional[int] = typer.Option(None, help="Lok Sabha number (omit to auto-discover all)"),
     sessions: Optional[str] = typer.Option(None, help="Sessions (e.g. '2-7', '6', '2,5-7'). Default: all configured sessions"),
+    reconcile: bool = typer.Option(False, help="Reconcile with existing HuggingFace dataset, preserving rows not rebuilt locally"),
+    repo_id: str = typer.Option("opensansad/lok-sabha-qa", help="HuggingFace repo ID (used with --reconcile)"),
 ) -> None:
     """Build a Parquet dataset from index + parsed data."""
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
@@ -219,25 +308,37 @@ def build(
         pct = count / len(records) * 100
         logger.info("  %-25s %6d  (%5.1f%%)", method, count, pct)
 
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # Write build report and issues log
+    report_path = _write_build_report(
+        issues, output_dir, total_index, split_distribution=dict(split_counts),
+    )
+    if issues:
+        issues_path = _write_issues_log(issues, output_dir)
+        # Print summary by issue type instead of one line per issue
+        issue_counts = Counter(e["issue"] for e in issues)
+        logger.warning(
+            "%d issues across %d records — details in %s",
+            len(issues), total_index, issues_path,
+        )
+        for issue_type, count in issue_counts.most_common():
+            logger.warning("  %-25s %d", issue_type, count)
+    else:
+        logger.info("Build report written to %s (no issues)", report_path)
+
+    # Reconcile with existing HF dataset if requested
+    if reconcile:
+        issue_ids = {e["id"] for e in issues}
+        records = _reconcile_with_hf(records, issue_ids, repo_id)
+
     # Build HuggingFace Dataset and write Parquet
     ds = Dataset.from_list(records)
-    output_dir.mkdir(parents=True, exist_ok=True)
     parquet_path = output_dir / "lok_sabha_qa.parquet"
     ds.to_parquet(str(parquet_path))
 
     logger.info("Dataset written to %s (%d rows)", parquet_path, len(ds))
     logger.info("Columns: %s", ds.column_names)
-
-    # Write build report
-    report_path = _write_build_report(
-        issues, output_dir, total_index, split_distribution=dict(split_counts),
-    )
-    if issues:
-        logger.warning("Build report: %d issues written to %s", len(issues), report_path)
-        for entry in issues:
-            logger.warning("  %s — %s (engine=%s)", entry["id"], entry["issue"], entry["engine"])
-    else:
-        logger.info("Build report written to %s (no issues)", report_path)
 
 
 if __name__ == "__main__":

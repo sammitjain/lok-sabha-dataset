@@ -5,7 +5,7 @@ language:
   - hi
 pretty_name: "Lok Sabha Q&A — Indian Parliamentary Questions & Answers"
 size_categories:
-  - 10K<n<100K
+  - 100K<n<1M
 task_categories:
   - question-answering
   - text-classification
@@ -57,7 +57,7 @@ dataset_info:
       dtype: float64
   splits:
     - name: train
-      num_examples: 127625
+      num_examples: 129120
 ---
 
 <p align="center">
@@ -79,10 +79,10 @@ dataset_info:
 
 ### Dataset Summary
 
-This dataset contains **127,600+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
+This dataset contains **129,100+** parliamentary Q&A records from India's Lok Sabha (lower house of Parliament), covering:
 
-- **18th Lok Sabha** — 27,723 questions across sessions 2–7 (Jul 2024 — Mar 2026), fully extracted with question/answer text
-- **17th Lok Sabha** — 60,549 questions across sessions 1–12, 14–15 (Jun 2019 — Feb 2024), fully extracted with question/answer text
+- **18th Lok Sabha** — 29,219 questions across sessions 2–7 (Jul 2024 — Mar 2026), fully extracted with question/answer text
+- **17th Lok Sabha** — 60,548 questions across sessions 1–12, 14–15 (Jun 2019 — Feb 2024), fully extracted with question/answer text
 - **16th Lok Sabha** — 39,353 questions from sessions 10–17 (Nov 2016 — Feb 2019), fully extracted with question/answer text
 
 Each record contains rich metadata including the responsible ministry, subject, date, MP names, and links to the original source PDFs on [Digital Sansad](https://sansad.in/). For records where text extraction is complete, the full question and official government answer are included.
@@ -162,8 +162,8 @@ The dataset is provided as a single `train` split. Users can create custom split
 | 4 | Feb — Mar 2025 | 500 | 5,750 | 6,250 |
 | 5 | Jul — Aug 2025 | 419 | 4,829 | 5,248 |
 | 6 | Nov — Dec 2025 | 280 | 3,219 | 3,499 |
-| 7 | Jan — Mar 2026 | 358 | 4,120 | 4,478 |
-| **Total** | | **2,217** | **25,506** | **27,723** |
+| 7 | Jan — Mar 2026 | 477 | 5,497 | 5,974 |
+| **Total** | | **2,336** | **26,883** | **29,219** |
 
 #### 16th Lok Sabha (2014–2019) — extraction in progress
 
@@ -229,7 +229,7 @@ This dataset contains only publicly available parliamentary records. The names o
 
 - **OCR artifacts:** Text is extracted from PDFs, some of which have corrupted embedded text layers. This can result in garbled characters in a small number of records (~0.05% remain unsplit due to severe OCR issues).
 - **Q/A separation:** The question-answer split is automated and may occasionally include header/footer text or split at imprecise boundaries.
-- **Coverage:** Currently covers the 16th (2014–2019), 17th (2019–2024), and 18th (2024–2026) Lok Sabhas. The 17th and 18th are fully extracted (~88,300 records with text); the 16th Lok Sabha has sessions 10–17 extracted (~39,300 records), remaining sessions in progress.
+- **Coverage:** Currently covers the 16th (2014–2019), 17th (2019–2024), and 18th (2024–2026) Lok Sabhas. All three are fully extracted (~129,100 records with text); the 16th Lok Sabha has sessions 10–17 extracted (~39,300 records), remaining sessions in progress.
 - **Hindi records:** A small subset of records are in Hindi. The Q/A separation for Hindi text relies on Hindi-specific markers and may be less reliable than for English records.
 
 ### Future Improvements

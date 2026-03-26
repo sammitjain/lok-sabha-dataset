@@ -10,6 +10,7 @@ Usage:
   uv run python -m lok_sabha_dataset.pipeline.download run --lok 18
   uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --sessions 7
   uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --sessions 5-7 --include-hindi
+  uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --skip-old  # skip questions already in HF
 
 Notes:
 - Idempotent: skips files that already exist.
@@ -45,6 +46,22 @@ def _iter_index_files(data_dir: Path, sessions: Optional[List[int]]) -> Iterable
                 print(f"[warn] missing index file: {p}")
     else:
         yield from sorted(data_dir.glob("index_session_*.jsonl"))
+
+
+def _load_hf_ids(repo_id: str) -> set[str]:
+    """Load IDs from HF dataset that already have full_text populated."""
+    from datasets import load_dataset
+
+    print(f"Loading existing dataset from HuggingFace: {repo_id}")
+    ds = load_dataset(repo_id, split="train")
+    ids = {row["id"] for row in ds if row.get("full_text")}
+    print(f"  {len(ids)} questions already have full_text in HF")
+    return ids
+
+
+def _make_id(lok: int, session_no: int | str, row: dict) -> str:
+    """Construct a record ID from an index row, matching build.py format."""
+    return f"LS{lok}-S{session_no}-{row.get('type', '')}-{row.get('ques_no')}"
 
 
 def _filename_from_url(url: str) -> str:
@@ -95,6 +112,8 @@ def run(
     sleep_max: float = typer.Option(0.6, help="Max seconds between downloads"),
     overwrite: bool = typer.Option(False, help="Re-download even if file exists"),
     max_files: Optional[int] = typer.Option(None, help="Stop after downloading N files (for testing)"),
+    skip_old: bool = typer.Option(False, help="Skip questions that already have full_text in the HF dataset"),
+    repo_id: str = typer.Option("opensansad/lok-sabha-qa", help="HuggingFace repo ID (used with --skip-old)"),
 ) -> None:
     data_dir = Path(base_dir) / str(lok)
     if not data_dir.exists():
@@ -105,10 +124,13 @@ def run(
     if not index_files:
         raise typer.BadParameter(f"No index_session_*.jsonl files found in {data_dir}")
 
+    hf_ids: set[str] = _load_hf_ids(repo_id) if skip_old else set()
+
     pdf_root = data_dir / "pdfs"
 
     downloaded = 0
     skipped = 0
+    skipped_hf = 0
     errors = 0
     processed = 0
     last_report = time.time()
@@ -127,6 +149,12 @@ def run(
             with index_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     obj = json.loads(line)
+
+                    if hf_ids:
+                        rec_id = _make_id(lok, session_no, obj)
+                        if rec_id in hf_ids:
+                            skipped_hf += 1
+                            continue
 
                     urls = []
                     url_en = obj.get("questionsFilePath")
@@ -173,6 +201,8 @@ def run(
     print(f"\nDone.")
     print(f"Downloaded: {downloaded}")
     print(f"Skipped (already exists): {skipped}")
+    if hf_ids:
+        print(f"Skipped (already in HF): {skipped_hf}")
     print(f"Errors: {errors}")
     print(f"PDF root: {pdf_root}")
 
