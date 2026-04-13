@@ -11,7 +11,7 @@
 <p align="center">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY%204.0-lightgrey.svg" alt="CC BY 4.0"></a>
   <a href="https://huggingface.co/datasets/opensansad/lok-sabha-qa"><img src="https://img.shields.io/badge/%F0%9F%A4%97-Dataset-yellow.svg" alt="HuggingFace Dataset"></a>
-  <img src="https://img.shields.io/badge/records-138%2C300%2B-green.svg" alt="138,300+ records">
+  <img src="https://img.shields.io/badge/records-146%2C300%2B-green.svg" alt="146,300+ records">
 </p>
 
 <p align="center">
@@ -29,11 +29,11 @@ Part of the **OpenSansad** initiative — a personal project to make Sansad's (I
 | | 18th Lok Sabha | 17th Lok Sabha | 16th Lok Sabha |
 |---|---|---|---|
 | **Period** | 2024–2026 | 2019–2024 | 2014–2019 |
-| **Sessions** | 2–7 | 1–12, 14–15 | 8–17 |
-| **Questions** | 30,220 | 60,548 | 47,600 |
-| **Text extracted** | 30,220 | 60,530 | 47,578 |
+| **Sessions** | 2–7 | 1–12, 14–15 | 6–17 |
+| **Questions** | 30,220 | 60,548 | 55,594 |
+| **Text extracted** | 30,220 | 60,530 | 55,573 |
 
-**Total: 138,300+ records** covering both starred (oral) and unstarred (written) parliamentary questions.
+**Total: 146,300+ records** covering both starred (oral) and unstarred (written) parliamentary questions.
 
 ## Quick Start
 
