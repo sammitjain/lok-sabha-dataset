@@ -65,13 +65,9 @@ def _make_id(lok: int, session_no: int | str, row: dict) -> str:
 
 
 def _filename_from_url(url: str) -> str:
-    """Best-effort: extract the pdf filename from a URL."""
-    # common pattern: .../<name>.pdf?...
-    m = re.search(r"/([^/?#]+\.pdf)(?:\?|#|$)", url)
-    if m:
-        return m.group(1)
-    # fallback
-    return "file.pdf"
+    """Extract the filename from a sansad.in download URL (PDF, DOCX, DOC, etc.)."""
+    fname = url.split("/")[-1].split("?")[0]
+    return fname if fname else "file.bin"
 
 
 def download_file(
@@ -131,11 +127,13 @@ def run(
     downloaded = 0
     skipped = 0
     skipped_hf = 0
+    no_url = 0
     errors = 0
     processed = 0
     last_report = time.time()
     report_interval = 15  # seconds between progress prints
     failed_log = data_dir / "failed_downloads.txt"
+    skipped_log = data_dir / "skipped_downloads.txt"
 
     with httpx.Client(headers={"User-Agent": "opensansad/0.1"}, follow_redirects=True) as client:
         for index_path in index_files:
@@ -149,17 +147,24 @@ def run(
             with index_path.open("r", encoding="utf-8") as f:
                 for line in f:
                     obj = json.loads(line)
+                    key = obj.get("key", f"S{session_no}-{obj.get('ques_no')}")
 
                     if hf_ids:
                         rec_id = _make_id(lok, session_no, obj)
                         if rec_id in hf_ids:
                             skipped_hf += 1
+                            with skipped_log.open("a", encoding="utf-8") as sl:
+                                sl.write(f"{session_no}\t{key}\t{obj.get('questionsFilePath', '')}\thf_exists\n")
                             continue
 
                     urls = []
                     url_en = obj.get("questionsFilePath")
                     if url_en:
                         urls.append((url_en, out_dir))
+                    else:
+                        no_url += 1
+                        with skipped_log.open("a", encoding="utf-8") as sl:
+                            sl.write(f"{session_no}\t{key}\t\tno_url\n")
 
                     if include_hindi:
                         url_hi = obj.get("questionsFilePathHindi")
@@ -176,18 +181,20 @@ def run(
                                 downloaded += 1
                             else:
                                 skipped += 1
+                                with skipped_log.open("a", encoding="utf-8") as sl:
+                                    sl.write(f"{session_no}\t{key}\t{url}\tdisk_exists\n")
                             processed += 1
 
                             # lightweight periodic progress update
                             now = time.time()
                             if now - last_report >= report_interval:
-                                print(f"Progress: processed={processed} downloaded={downloaded} skipped={skipped} errors={errors}")
+                                print(f"Progress: processed={processed} downloaded={downloaded} skipped={skipped} skipped_hf={skipped_hf} errors={errors}")
                                 last_report = now
                         except Exception as e:
                             errors += 1
                             print(f"[error] {url} -> {e}")
                             with failed_log.open("a", encoding="utf-8") as fl:
-                                fl.write(f"{session_no}\t{obj.get('key')}\t{url}\t{e}\n")
+                                fl.write(f"{session_no}\t{key}\t{url}\t{e}\n")
                         if max_files is not None and downloaded >= max_files:
                             print("Reached --max-files limit")
                             print(f"Downloaded: {downloaded}, skipped: {skipped}, errors: {errors}")
@@ -200,11 +207,15 @@ def run(
 
     print(f"\nDone.")
     print(f"Downloaded: {downloaded}")
-    print(f"Skipped (already exists): {skipped}")
+    print(f"Skipped (already on disk): {skipped}")
     if hf_ids:
-        print(f"Skipped (already in HF): {skipped_hf}")
+        print(f"Skipped (already in HF):  {skipped_hf}")
+    if no_url:
+        print(f"Skipped (no URL in index): {no_url}")
     print(f"Errors: {errors}")
     print(f"PDF root: {pdf_root}")
+    if skipped or skipped_hf or no_url:
+        print(f"Skip log: {skipped_log}")
 
 
 if __name__ == "__main__":

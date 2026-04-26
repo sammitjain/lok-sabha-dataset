@@ -22,12 +22,19 @@ dist/
 .claude/
 
 # Pipeline data (PDFs, parsed JSON, index files)
-data/
+data/*
+# ...except the public-facing source-issues files
+!data/source_issues.jsonl
+!data/source_issues_manual.jsonl
 
 # Build output
 output/
 
 # Test caches
 .pytest_cache/
+
+# Test-run artifacts (regenerated each run from tests/fixtures/<lok>/pdfs/)
+tests/fixtures/*/parsed/
+tests/fixtures/*/failed_parse.txt
 
 # uv lock (generated)

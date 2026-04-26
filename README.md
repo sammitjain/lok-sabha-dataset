@@ -59,11 +59,13 @@ This repo contains the full data pipeline — self-contained, no external depend
 ![Ingestion Pipeline](docs/assets/ingestion_pipeline.png)
 
 ```
-1. Curate   →  Fetch metadata from sansad.in API
-2. Download →  Download source PDFs
-3. Extract  →  Extract text from PDFs (Docling + EasyOCR fallback)
-4. Build    →  Assemble into Parquet dataset
-5. Publish  →  Push to HuggingFace Hub
+1. Curate       →  Fetch metadata from sansad.in API
+2. Download     →  Download source files (PDF / DOCX / DOC)
+3. Extract      →  Extract text via Docling (+ EasyOCR fallback for scanned PDFs,
+                                              + LibreOffice pre-conversion for .doc)
+4. Build        →  Assemble into Parquet dataset
+5. Publish      →  Push to HuggingFace Hub
+6. Source Issues →  (optional) Aggregate upstream data issues into SOURCE_ISSUES.md
 ```
 
 ### Setup
@@ -71,6 +73,8 @@ This repo contains the full data pipeline — self-contained, no external depend
 ```bash
 uv sync
 ```
+
+Optional system dependency: **LibreOffice** is required for legacy `.doc` files (binary OLE2). The pipeline auto-detects `soffice` on PATH or in the standard install locations — install via `brew install --cask libreoffice` (macOS) or your distro's package manager. `.docx` and `.pdf` work without it.
 
 ### Run the pipeline
 
@@ -90,6 +94,9 @@ uv run python -m lok_sabha_dataset.build
 
 # 5. Publish to HuggingFace
 uv run python -m lok_sabha_dataset.publish --push
+
+# 6. (optional) Refresh the public-facing source-issues report
+uv run python -m lok_sabha_dataset.source_issues
 ```
 
 ### Build specific sessions
@@ -109,6 +116,24 @@ export LOKSABHA_DATA_DIR=/path/to/data
 ```
 
 Default is `data/` in the repo root.
+
+## Testing
+
+Integration tests cover the full extract pipeline (`.pdf` / `.docx` / `.doc` source formats and the `--retry-low-confidence --engine easyocr` retry path) using a small fixture corpus and golden reference outputs:
+
+```bash
+uv run --extra dev pytest tests/test_extract_doc.py -v
+```
+
+After making changes that legitimately alter extracted text, regenerate the golden references:
+
+```bash
+uv run python tests/update_golden.py
+```
+
+## Source Issues
+
+Upstream data issues observed at sansad.in (broken downloads, NIL-only documents, mismatched files, etc.) are tracked in [SOURCE_ISSUES.md](SOURCE_ISSUES.md) with the full machine-readable list at [`data/source_issues.jsonl`](data/source_issues.jsonl). Hand-curated entries live in [`data/source_issues_manual.jsonl`](data/source_issues_manual.jsonl) — append a JSON line and re-run step 6 to publish.
 
 ## Related
 

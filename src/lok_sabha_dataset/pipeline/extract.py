@@ -1,19 +1,19 @@
-"""Extract text from downloaded Lok Sabha PDFs.
+"""Extract text from downloaded Lok Sabha question files (PDF, DOCX, DOC).
 
-Reads PDFs under:
+Reads source files under:
   <data-dir>/<lok>/pdfs/session_<n>/
 
 Writes parsed JSON under:
-  <data-dir>/<lok>/parsed/session_<n>/
+  <output-dir>/<lok>/parsed/session_<n>/   (defaults to <data-dir> if not specified)
 
 Extraction strategy:
-  1. Docling (structure-aware markdown) — fast, handles text-layer PDFs
-  2. If Docling returns empty text → fallback to Docling + EasyOCR
-     (handles scanned / image-only PDFs)
+  PDF  — Docling (text-layer); fallback to Docling + EasyOCR for scanned PDFs
+  DOCX — Docling directly (natively supported)
+  DOC  — LibreOffice headless converts to .docx first, then Docling
 
 Idempotent + resumable:
 - skips if output JSON already exists (unless --overwrite)
-- logs failures to <data-dir>/<lok>/failed_parse.txt
+- logs failures to <output-dir>/<lok>/failed_parse.txt
 - lightweight progress print every few seconds
 
 Usage:
@@ -21,9 +21,13 @@ Usage:
   uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18 --sessions 7
   uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18 --sessions 7 --max-files 10
 
+  # Separate output directory (useful for testing)
+  uv run python -m lok_sabha_dataset.pipeline.extract run --lok 16 --sessions 5 \\
+      --data-dir data --output-dir tests/fixtures --engine docling
+
   # Dry-run: test extraction on a single file (prints output, does not write)
   uv run python -m lok_sabha_dataset.pipeline.extract test data/18/pdfs/session_2/AS39_0OzSlM.pdf
-  uv run python -m lok_sabha_dataset.pipeline.extract test data/18/pdfs/session_2/AS39_0OzSlM.pdf --engine easyocr
+  uv run python -m lok_sabha_dataset.pipeline.extract test data/16/pdfs/session_5/AU3712.doc
 """
 
 from __future__ import annotations
@@ -31,6 +35,9 @@ from __future__ import annotations
 import json
 import random
 import re
+import shutil
+import subprocess
+import tempfile
 import time
 from pathlib import Path
 from typing import Iterable, List, Optional
@@ -52,7 +59,7 @@ _converter_ocr = None
 
 
 def _get_default_converter():
-    """Docling converter without OCR — fast, for text-layer PDFs."""
+    """Docling converter without OCR — fast, for text-layer PDFs and Word docs."""
     global _converter_default
     if _converter_default is None:
         from docling.datamodel.base_models import InputFormat
@@ -96,13 +103,74 @@ def _get_ocr_converter():
     return _converter_ocr
 
 
+# ── LibreOffice helpers ───────────────────────────────────────────────────────
+
+_soffice_path: Path | None = None
+
+
+def _find_soffice() -> Path:
+    """Find the LibreOffice soffice binary. Raises RuntimeError if not found."""
+    global _soffice_path
+    if _soffice_path is not None:
+        return _soffice_path
+
+    # Check PATH first
+    from_path = shutil.which("soffice") or shutil.which("libreoffice")
+    if from_path:
+        _soffice_path = Path(from_path)
+        return _soffice_path
+
+    # Well-known install locations
+    candidates = [
+        Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),  # macOS
+        Path("/usr/bin/soffice"),         # Linux
+        Path("/usr/bin/libreoffice"),     # Linux alternative
+        Path("/usr/local/bin/soffice"),
+    ]
+    for p in candidates:
+        if p.exists():
+            _soffice_path = p
+            return _soffice_path
+
+    raise RuntimeError(
+        "LibreOffice (soffice) not found. Install it:\n"
+        "  macOS: brew install --cask libreoffice\n"
+        "  Linux: apt install libreoffice"
+    )
+
+
+def _convert_doc_to_docx(doc_path: Path, tmp_dir: Path) -> Path:
+    """Convert a .doc file to .docx using LibreOffice headless.
+
+    Raises RuntimeError on conversion failure.
+    """
+    soffice = _find_soffice()
+    result = subprocess.run(
+        [
+            str(soffice), "--headless",
+            "--convert-to", "docx",
+            "--outdir", str(tmp_dir),
+            str(doc_path),
+        ],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(f"soffice conversion failed: {result.stderr.strip()}")
+    out = tmp_dir / (doc_path.stem + ".docx")
+    if not out.exists():
+        raise RuntimeError(f"soffice produced no output for {doc_path.name}")
+    return out
+
+
 # ── Core extraction ───────────────────────────────────────────────────────────
 
 
-def _docling_convert(converter: DocumentConverter, pdf_path: Path) -> tuple[str, int, float]:
+def _docling_convert(converter, path: Path) -> tuple[str, int, float]:
     """Run a Docling converter and return (markdown, num_pages, elapsed_sec)."""
     t0 = time.time()
-    result = converter.convert(str(pdf_path))
+    result = converter.convert(str(path))
     doc = result.document
     markdown = doc.export_to_markdown()
     num_pages = len(doc.pages) if hasattr(doc, "pages") else 0
@@ -114,16 +182,16 @@ def extract_single_pdf(
     *,
     engine: str = "auto",
 ) -> dict:
-    """Extract text from a single PDF and return a parsed-JSON-ready dict.
+    """Extract text from a single source file and return a parsed-JSON-ready dict.
 
     Parameters
     ----------
     pdf_path : Path
-        Path to the PDF file.
+        Path to the source file (.pdf, .docx, or .doc).
     engine : str
-        "auto"    — Docling first, EasyOCR fallback if empty (default)
+        "auto"    — Docling first, EasyOCR fallback if empty (default; PDF only)
         "docling" — Docling only, no OCR fallback
-        "easyocr" — Force EasyOCR (skip Docling-only pass)
+        "easyocr" — Force EasyOCR (PDF only; .doc/.docx use Docling regardless)
 
     Returns
     -------
@@ -132,24 +200,54 @@ def extract_single_pdf(
     """
     total_start = time.time()
     ocr_fallback = False
+    soffice_conversion = False
+    actual_path = pdf_path
+    tmp_dir: Path | None = None
 
-    if engine in ("auto", "docling"):
-        markdown, num_pages, elapsed = _docling_convert(_get_default_converter(), pdf_path)
+    # .doc files must be converted to .docx via LibreOffice first
+    if pdf_path.suffix.lower() == ".doc":
+        tmp_dir = Path(tempfile.mkdtemp(prefix="lok_sabha_doc_"))
+        try:
+            actual_path = _convert_doc_to_docx(pdf_path, tmp_dir)
+            soffice_conversion = True
+        except Exception:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+            raise
 
-        if engine == "auto" and not markdown.strip():
-            # Empty text — likely a scanned PDF, retry with OCR
+    try:
+        if engine in ("auto", "docling"):
+            markdown, num_pages, elapsed = _docling_convert(
+                _get_default_converter(), actual_path
+            )
+            if engine == "auto" and not markdown.strip():
+                # Empty — likely scanned PDF; retry with OCR (not applicable to DOC/DOCX)
+                ocr_fallback = True
+                markdown, num_pages, ocr_elapsed = _docling_convert(
+                    _get_ocr_converter(), actual_path
+                )
+                elapsed += ocr_elapsed
+
+        elif engine == "easyocr":
+            markdown, num_pages, elapsed = _docling_convert(
+                _get_ocr_converter(), actual_path
+            )
             ocr_fallback = True
-            markdown, num_pages, ocr_elapsed = _docling_convert(_get_ocr_converter(), pdf_path)
-            elapsed += ocr_elapsed
 
-    elif engine == "easyocr":
-        markdown, num_pages, elapsed = _docling_convert(_get_ocr_converter(), pdf_path)
-        ocr_fallback = True
+        else:
+            raise ValueError(f"Unknown engine: {engine!r}. Use 'auto', 'docling', or 'easyocr'.")
 
+    finally:
+        if tmp_dir is not None:
+            shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    if soffice_conversion and ocr_fallback:
+        engine_label = "soffice+docling+easyocr"
+    elif soffice_conversion:
+        engine_label = "soffice+docling"
+    elif ocr_fallback:
+        engine_label = "docling+easyocr"
     else:
-        raise ValueError(f"Unknown engine: {engine!r}. Use 'auto', 'docling', or 'easyocr'.")
-
-    engine_label = "docling+easyocr" if ocr_fallback else "docling"
+        engine_label = "docling"
 
     return {
         "pdf_filename": pdf_path.name,
@@ -170,24 +268,18 @@ def extract_single_pdf(
 # ── CLI helpers ───────────────────────────────────────────────────────────────
 
 
-def _iter_pdf_files(pdf_dir: Path) -> Iterable[Path]:
-    yield from sorted(pdf_dir.glob("*.pdf"))
+_SUPPORTED_EXTENSIONS = {".pdf", ".docx", ".doc"}
+
+
+def _iter_source_files(pdf_dir: Path) -> Iterable[Path]:
+    """Yield all extractable files (PDF, DOCX, DOC) from a directory, sorted by name."""
+    files = [p for p in pdf_dir.iterdir() if p.suffix.lower() in _SUPPORTED_EXTENSIONS]
+    yield from sorted(files)
 
 
 _IMAGE_COMMENT_RE = re.compile(r"<!--\s*image\s*-->")
 
 MIN_USABLE_WORDS = 15
-
-
-def _parsed_has_text(out_path: Path) -> bool:
-    """Check if a parsed JSON file has non-empty extracted text."""
-    try:
-        with out_path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
-        text = data.get("full_markdown") or data.get("full_text") or ""
-        return bool(text.strip())
-    except Exception:
-        return False
 
 
 def _parsed_is_usable(out_path: Path) -> bool:
@@ -205,7 +297,6 @@ def _parsed_is_usable(out_path: Path) -> bool:
         stripped = text.strip()
         if not stripped:
             return False
-        # Strip HTML comments and check what's left
         without_comments = _IMAGE_COMMENT_RE.sub("", stripped).strip()
         if not without_comments:
             return False
@@ -223,22 +314,26 @@ def _parsed_is_usable(out_path: Path) -> bool:
 def run(
     lok: int = typer.Option(..., help="Lok Sabha number"),
     sessions: str = typer.Option(..., help="Sessions like '7' or '1-7' or '1,3,7'"),
-    base_dir: str = typer.Option(str(DATA_DIR), "--data-dir", help="Base data directory"),
+    base_dir: str = typer.Option(str(DATA_DIR), "--data-dir", help="Base data directory (input PDFs/docs)"),
+    output_dir: Optional[str] = typer.Option(None, "--output-dir", help="Base directory for parsed JSON output (default: same as --data-dir)"),
     engine: str = typer.Option("auto", help="Engine: 'auto' (docling + OCR fallback), 'docling' (no OCR), 'easyocr' (force OCR)"),
-    retry_empty: bool = typer.Option(False, "--retry-empty", help="Re-process files whose parsed JSON has empty text (use with --engine easyocr)"),
     retry_low_confidence: bool = typer.Option(False, "--retry-low-confidence", help="Re-process files with empty or low-quality text (e.g. only '<!-- image -->')"),
     overwrite: bool = typer.Option(False, help="Re-extract even if parsed JSON exists"),
-    sleep_min: float = typer.Option(0.0, help="Optional min seconds between PDFs"),
-    sleep_max: float = typer.Option(0.0, help="Optional max seconds between PDFs"),
-    max_files: Optional[int] = typer.Option(None, help="Stop after processing N PDFs (for testing)"),
+    sleep_min: float = typer.Option(0.0, help="Optional min seconds between files"),
+    sleep_max: float = typer.Option(0.0, help="Optional max seconds between files"),
+    max_files: Optional[int] = typer.Option(None, help="Stop after processing N files (for testing)"),
 ) -> None:
-    """Batch-extract text from all PDFs for the given Lok Sabha sessions."""
+    """Batch-extract text from all source files (PDF/DOCX/DOC) for the given Lok Sabha sessions."""
     base = Path(base_dir) / str(lok)
     if not base.exists():
         raise typer.BadParameter(f"Missing data directory: {base}")
 
+    # Output base: separate dir if specified, otherwise same as data dir
+    out_base = (Path(output_dir) if output_dir else Path(base_dir)) / str(lok)
+    out_base.mkdir(parents=True, exist_ok=True)
+
     sess_list = parse_sessions(sessions)
-    failed_log = base / "failed_parse.txt"
+    failed_log = out_base / "failed_parse.txt"
 
     processed = 0
     extracted = 0
@@ -246,16 +341,19 @@ def run(
     retried = 0
     errors = 0
     ocr_fallbacks = 0
+    doc_conversions = 0
 
     last_report = time.time()
     report_interval = 15
 
-    retry_mode = " (retry-low-confidence)" if retry_low_confidence else (" (retry-empty)" if retry_empty else "")
+    retry_mode = " (retry-low-confidence)" if retry_low_confidence else ""
     print(f"Engine: {engine}{retry_mode}")
+    if output_dir:
+        print(f"Output dir: {out_base}")
 
     for sess in sess_list:
         pdf_dir = base / "pdfs" / f"session_{sess}"
-        out_dir = base / "parsed" / f"session_{sess}"
+        out_dir = out_base / "parsed" / f"session_{sess}"
         out_dir.mkdir(parents=True, exist_ok=True)
 
         if not pdf_dir.exists():
@@ -264,22 +362,20 @@ def run(
 
         print(f"Session {sess}: {pdf_dir} -> {out_dir}")
 
-        for pdf_path in _iter_pdf_files(pdf_dir):
+        for pdf_path in _iter_source_files(pdf_dir):
             processed += 1
             out_path = out_dir / f"{pdf_path.stem}.json"
+            is_doc = pdf_path.suffix.lower() == ".doc"
 
             # Decide whether to process this file
             should_process = False
             if overwrite:
                 should_process = True
             elif retry_low_confidence:
-                # Re-process files with empty or low-quality extractions
-                if out_path.exists() and not _parsed_is_usable(out_path):
-                    should_process = True
-                    retried += 1
-            elif retry_empty:
-                # Only re-process files that exist but have empty text
-                if out_path.exists() and not _parsed_has_text(out_path):
+                # OCR only applies to PDFs — .doc/.docx have native text, no scanned pages to re-OCR
+                if pdf_path.suffix.lower() != ".pdf":
+                    pass
+                elif out_path.exists() and not _parsed_is_usable(out_path):
                     should_process = True
                     retried += 1
             elif not out_path.exists():
@@ -290,8 +386,15 @@ def run(
             else:
                 try:
                     parsed = extract_single_pdf(pdf_path, engine=engine)
+                    engine_used = parsed.get("engine", "")
 
-                    if parsed.get("ocr_fallback"):
+                    if engine_used.startswith("soffice"):
+                        doc_conversions += 1
+                        # print(f"  [doc] {pdf_path.name} — soffice+docling ({parsed['processing_time_sec']}s)")
+                    elif pdf_path.suffix.lower() == ".docx":
+                        # print(f"  [docx] {pdf_path.name} — docling ({parsed['processing_time_sec']}s)")
+                        pass
+                    elif parsed.get("ocr_fallback"):
                         ocr_fallbacks += 1
                         print(f"  [ocr] {pdf_path.name} — EasyOCR fallback ({parsed['processing_time_sec']}s)")
 
@@ -312,7 +415,8 @@ def run(
             if now - last_report >= report_interval:
                 print(
                     f"Progress: processed={processed} extracted={extracted} "
-                    f"skipped={skipped} retried={retried} errors={errors} ocr_fallbacks={ocr_fallbacks}"
+                    f"skipped={skipped} retried={retried} errors={errors} "
+                    f"ocr_fallbacks={ocr_fallbacks} doc_conversions={doc_conversions}"
                 )
                 last_report = now
 
@@ -320,7 +424,7 @@ def run(
                 print("Reached --max-files limit")
                 break
 
-            # optional sleep between PDFs (usually keep 0; parsing is local)
+            # optional sleep between files (usually keep 0; parsing is local)
             if sleep_max > 0:
                 lo = max(0.0, sleep_min)
                 hi = max(lo, sleep_max)
@@ -329,25 +433,26 @@ def run(
     print("\nDone.")
     print(
         f"Processed={processed} extracted={extracted} skipped={skipped} "
-        f"retried={retried} errors={errors} ocr_fallbacks={ocr_fallbacks}"
+        f"retried={retried} errors={errors} ocr_fallbacks={ocr_fallbacks} "
+        f"doc_conversions={doc_conversions}"
     )
     print(f"Failed log: {failed_log}")
 
 
 @app.command()
 def test(
-    pdf_path: str = typer.Argument(..., help="Path to a single PDF file"),
+    file_path: str = typer.Argument(..., help="Path to a single source file (.pdf, .docx, or .doc)"),
     engine: str = typer.Option(
         "auto",
         help="Engine: 'auto' (Docling + OCR fallback), 'docling' (no OCR), 'easyocr' (force OCR)",
     ),
 ) -> None:
-    """Dry-run: extract a single PDF and print the results (does not write any files)."""
-    path = Path(pdf_path)
+    """Dry-run: extract a single file and print the results (does not write any files)."""
+    path = Path(file_path)
     if not path.exists():
         raise typer.BadParameter(f"File not found: {path}")
 
-    print(f"PDF:    {path}")
+    print(f"File:   {path}")
     print(f"Engine: {engine}")
     print()
 
