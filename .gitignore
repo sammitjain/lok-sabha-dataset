@@ -37,4 +37,8 @@ output/
 tests/fixtures/*/parsed/
 tests/fixtures/*/failed_parse.txt
 
+# Curate / download integration test fixtures (entirely generated)
+tests/fixtures/curate/
+tests/fixtures/download/
+
 # uv lock (generated)

@@ -2,13 +2,13 @@
 
 This document tracks upstream-source data issues observed while building the [opensansad/lok-sabha-qa](https://huggingface.co/datasets/opensansad/lok-sabha-qa) dataset. These are **not** bugs in our extraction pipeline — they are issues with the original documents published on [sansad.in](https://sansad.in/).
 
-The full machine-readable list is at [`data/source_issues.jsonl`](data/source_issues.jsonl) (114 entries total).
+The full machine-readable list is at [`data/source_issues.jsonl`](data/source_issues.jsonl) (113 entries total).
 
 ## Summary
 
 | Issue kind | Total | Per Lok Sabha |
 |---|---:|---|
-| `download_failed` | 39 | LS16: 38, LS18: 1 |
+| `download_failed` | 38 | LS16: 38 |
 | `manual` | 2 | LS16: 2 |
 | `nil_only` | 73 | LS16: 73 |
 
@@ -16,7 +16,7 @@ The full machine-readable list is at [`data/source_issues.jsonl`](data/source_is
 
 URLs that failed to download from sansad.in (broken protocol, 5xx server errors, missing files, etc.). The dataset cannot include text for these questions until the source becomes accessible.
 
-**Count:** 39
+**Count:** 38
 
 ## `manual`
 

@@ -7,10 +7,10 @@ Downloads PDFs referenced by `questionsFilePath` (English by default) into:
   <data-dir>/<lok>/pdfs/session_<n>/
 
 Usage:
-  uv run python -m lok_sabha_dataset.pipeline.download run --lok 18
-  uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --sessions 7
-  uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --sessions 5-7 --include-hindi
-  uv run python -m lok_sabha_dataset.pipeline.download run --lok 18 --skip-old  # skip questions already in HF
+  uv run python -m lok_sabha_dataset.pipeline.download --lok 18
+  uv run python -m lok_sabha_dataset.pipeline.download --lok 18 --sessions 7
+  uv run python -m lok_sabha_dataset.pipeline.download --lok 18 --sessions 5-7 --include-hindi
+  uv run python -m lok_sabha_dataset.pipeline.download --lok 18 --skip-old  # skip questions already in HF
 
 Notes:
 - Idempotent: skips files that already exist.

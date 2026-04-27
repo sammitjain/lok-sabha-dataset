@@ -83,7 +83,7 @@ Optional system dependency: **LibreOffice** is required for legacy `.doc` files 
 uv run python -m lok_sabha_dataset.pipeline.curate --lok 18
 
 # 2. Download PDFs
-uv run python -m lok_sabha_dataset.pipeline.download run --lok 18
+uv run python -m lok_sabha_dataset.pipeline.download --lok 18
 
 # 3. Extract text from PDFs (two-pass for speed)
 uv run python -m lok_sabha_dataset.pipeline.extract run --lok 18 --engine docling
@@ -119,10 +119,19 @@ Default is `data/` in the repo root.
 
 ## Testing
 
-Integration tests cover the full extract pipeline (`.pdf` / `.docx` / `.doc` source formats and the `--retry-low-confidence --engine easyocr` retry path) using a small fixture corpus and golden reference outputs:
+Integration tests cover the full pipeline against live sansad.in endpoints and a small fixture corpus:
+
+| File | What it covers |
+|---|---|
+| `tests/test_curate.py` | `curate` pipeline against the live sansad.in API (LS16-S5 + LS18-S2, scoped to ~5 records per session via `--page-size 5 --max-pages 1`) |
+| `tests/test_download.py` | `download` pipeline against real sansad.in URLs — successful PDF + DOCX downloads, server-error and missing-protocol failures, no-URL skips, and idempotency |
+| `tests/test_extract_doc.py` | `extract` pipeline across `.pdf`/`.docx`/`.doc` source formats and the `--retry-low-confidence --engine easyocr` retry path with strict golden-file comparison |
+| `tests/test_splitter.py` | Q/A splitter unit tests |
+
+Run the full suite:
 
 ```bash
-uv run --extra dev pytest tests/test_extract_doc.py -v
+uv run --extra dev pytest tests/ -v
 ```
 
 After making changes that legitimately alter extracted text, regenerate the golden references:
@@ -130,6 +139,8 @@ After making changes that legitimately alter extracted text, regenerate the gold
 ```bash
 uv run python tests/update_golden.py
 ```
+
+The curate and download tests hit live sansad.in endpoints — failures generally signal real upstream changes worth investigating.
 
 ## Source Issues
 

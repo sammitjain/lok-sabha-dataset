@@ -10,8 +10,8 @@ Outputs (inside <data-dir>/<lok_no>/):
 - index_session_<n>.jsonl     (per-session Q&A index)
 
 Run:
-  uv run python -m lok_sabha_dataset.pipeline.curate run --lok 18
-  uv run python -m lok_sabha_dataset.pipeline.curate run --lok 18 --sessions 5-7
+  uv run python -m lok_sabha_dataset.pipeline.curate --lok 18
+  uv run python -m lok_sabha_dataset.pipeline.curate --lok 18 --sessions 5-7
 
 Notes:
 - The Q&A feed gives display names; we map names -> canonical IDs using masters.
@@ -175,6 +175,7 @@ def run(
     sleep_max: float = typer.Option(0.6, help="Max seconds between page requests"),
     resume: bool = typer.Option(True, help="Skip sessions already marked complete in progress.json"),
     force: bool = typer.Option(False, help="Re-run sessions even if marked complete"),
+    max_pages: Optional[int] = typer.Option(None, help="Stop after fetching N pages per session (for testing/preview; default: fetch all)"),
 ) -> None:
     out_dir = Path(base_dir) / str(lok)
     _ensure_dir(out_dir)
@@ -272,6 +273,8 @@ def run(
                         time.sleep(lo + random.random() * (hi - lo))
 
                     if len(questions) < page_size:
+                        break
+                    if max_pages is not None and page_no >= max_pages:
                         break
                     page_no += 1
 
